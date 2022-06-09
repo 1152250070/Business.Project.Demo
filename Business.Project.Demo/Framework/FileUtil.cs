@@ -18,9 +18,9 @@ namespace Business.Project.Demo.Framework
         /// </summary>
         /// <param name="path"></param>
         /// <returns></returns>
-        public static string GetFileContentDemo(string path)
+        public static string GetContent(string path = "")
         {
-            path = @"D:\Heng_Sheng_DianZi\etc\20220520.txt";
+            path = string.IsNullOrEmpty(path) ? @"D:\Heng_Sheng_DianZi\etc\20220520.txt" : path;
             string txtContent = ReadTxtOrCsv(path);
             return txtContent;
         }
@@ -178,7 +178,7 @@ namespace Business.Project.Demo.Framework
             }
             catch (Exception ex)
             {
-                
+
             }
             return false;
         }
