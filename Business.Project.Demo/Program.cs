@@ -3,4 +3,4 @@ using Business.Project.Demo.Client;
 using Business.Project.Demo.Framework;
 
 Console.WriteLine("Hello, World!");
-AdressIdentify.GetAdress();
+AddressParseV2.AutoSplitReveive();

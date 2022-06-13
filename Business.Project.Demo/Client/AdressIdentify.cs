@@ -17,8 +17,8 @@ namespace Business.Project.Demo.Client
             var areaList = JsonConvert.DeserializeObject<List<tbmain_area>>(content) ?? new List<tbmain_area>();
             DataTable table = new AdressIdentify().CreateTable(areaList);
             AddressToCityIDs addressModel = new AddressToCityIDs(table);
-            string address = "江苏南京浦口区江浦街道";
-            string cityf_name = addressModel.GetCityId(address);
+            string address = "江苏南京浦口江浦街道";//"江苏南京浦口区江浦街道";//杭州舟山东路
+            string cityf_name = addressModel.GetCityName(address);
         }
 
         private DataTable CreateTable(List<tbmain_area> areaList)
@@ -45,11 +45,6 @@ namespace Business.Project.Demo.Client
     /// </summary>
     public class AddressToCityIDs
     {
-        //最多返回3级编码，省市区
-        private int MAX_CITYS = 3;
-        //根节点编码
-        private string ROOT_ID = "100000";
-
         private DataTable table;
 
         public AddressToCityIDs(DataTable dtCitys)
@@ -57,66 +52,87 @@ namespace Business.Project.Demo.Client
             this.table = dtCitys;
         }
 
-        /// <summary>
-        /// 获取上级区域编号
-        /// </summary>
-        /// <param f_name="cityf_code"></param>
-        /// <returns></returns>
-        private string GetParentId(string cityf_code)
+
+        public string GetCityName(string address)
         {
-            var row = table.Select($"f_code='{cityf_code}'");
-            if (row != null && row.Length > 0)
-                return row[0]["f_parentcode"].ToString();
-            else
-                return "";
+            List<string> codeList = GetCityAddress(address);
+            string cityNames = GetCityName(codeList);//上海市-市辖区-金山区
+            return cityNames;
         }
 
-        /// <summary>
-        /// 获取指定区域码的所有父级编码
-        /// </summary>
-        /// <param f_name="result">返回结果</param>
-        /// <param f_name="cityf_code">区域码</param>
-        public void GetParentIDs(List<String> result, string cityCode)
+        public List<string> GetCityAddress(string address)
         {
-            var row = table.Select($"f_code='{cityCode}'");
-            if (row != null && row.Length > 0)
+            List<string> codeList = new List<string>();
+            table.DefaultView.Sort = "f_type ASC";
+            //枚举所有城市名称，匹配地址
+            foreach (DataRow row in table.DefaultView.ToTable().Rows)
             {
-                string f_parentcode = row[0]["f_parentcode"].ToString();
-                //父节点为省
-                if (f_parentcode == "1")
-                    return;
+                var f_name = row["f_name"].ToString();
+                int f_type = Convert.ToInt32(row["f_type"]);
+                //上海市宝山区丰翔路888号
+                if (!MatchName(address, f_name, f_type))
+                    continue;
 
-                result.Add(f_parentcode);
-                //匹配子节点
-                table.DefaultView.RowFilter = $"f_code='{f_parentcode}'";
-                var dt = table.DefaultView.ToTable();
-                if (dt.Rows.Count > 0)
+                string f_code = row["f_code"]?.ToString();
+                string f_parentcode = row["f_parentcode"]?.ToString();
+                List<string> tmp = new List<string>();
+                tmp.Add(f_code);
+                GetParentIDs(row, tmp);
+                if (codeList.Count == 0 || codeList.Exists(e => tmp.IndexOf(e) >= 0))
                 {
-                    foreach (DataRow R in dt.Rows)
-                    {
-                        GetParentIDs(result, R["f_code"].ToString());
-                    }
+                    string parent = GetParentId(f_parentcode);
+                    codeList.Add(f_code);
+                    codeList.Add(f_parentcode);
+                    codeList.Add(parent);
+                    address = address.Replace(f_name, "");
                 }
             }
-            //不包含根节点
-            result.Remove(ROOT_ID);
+
+            var result = codeList.Where(e => !string.IsNullOrEmpty(e) && e != "1").Distinct().OrderBy(x => x).ToList<string>();
+            return result;
         }
 
-        /// <summary>
-        /// 获取省市名称
-        /// </summary>
-        /// <param f_name="f_codeList">区域编码</param>
-        /// <returns></returns>
-        public string GetCityf_name(List<string> codeList)
+        private string GetParentId(string cityCode)
+        {
+            var row = table.Select($"f_code='{cityCode}'");
+            if (row == null || row.Length == 0)
+                return "";
+
+            return row[0]["f_parentcode"].ToString();
+        }
+
+        public void GetParentIDs(DataRow row, List<string> result)
+        {
+            if (row == null)
+                return;
+
+            string f_parentcode = row["f_parentcode"].ToString();
+            //父节点为省
+            if (f_parentcode == "1")
+                return;
+
+            result.Add(f_parentcode);
+            //匹配子节点
+            var rowArr = table.Select($"f_code='{f_parentcode}'");
+            if (rowArr == null || rowArr.Length == 0)
+                return;
+
+            foreach (DataRow rowItem in rowArr)
+            {
+                GetParentIDs(rowItem, result);
+            }
+        }
+
+        public string GetCityName(List<string> codeList)
         {
             StringBuilder sb = new StringBuilder();
             foreach (var code in codeList)
             {
                 var row = table.Select($"f_code='{code}'");
-                if (row.Length > 0)
+                if (row != null && row.Length > 0)
                 {
                     if (sb.Length == 0)
-                        sb.Append(row[0]["f_name"].ToString());
+                        sb.Append(row[0]["f_name"].ToString() + "省");
                     else
                         sb.Append("-" + row[0]["f_name"].ToString());
                 }
@@ -124,118 +140,28 @@ namespace Business.Project.Demo.Client
             return sb.ToString().Trim();
         }
 
-        /// <summary>
-        /// 根据地址信息，自动获取行政区域编码
-        /// </summary>        
-        /// <param f_name="address">地址信息</param>
-        /// <param f_name="cityIDs">输出3个城市编码，调号隔开</param>
-        /// <param f_name="cityf_names">输出3个城市名称，调号隔开</param>
-        /// <returns></returns>
-        public string GetCityId(string address)
+        private bool MatchName(string address, string name, int type)
         {
-            List<String> ids = new List<string>();
-
-            if (address.IndexOf("/") > 0)
-                ids = GetCityIDsByAddress(address, '/', ' ');
-            else
-                ids = GetCityIDsByAddress(address);
-
-            var result = ids.Take<String>(MAX_CITYS).ToList<String>();
-            //返回结果
-            string cityCodes = String.Join(",", result).Trim();//310000,310100,310116
-            string cityNames = GetCityf_name(result);//上海市-市辖区-金山区
-            return cityNames;
-        }
-
-        /// <summary>
-        /// 获取地址区码,地址有分隔符，如：/
-        /// </summary>
-        /// <param f_name="address">地址，如：上海市/松江区 松卫北路6700弄沪松五金建材市场3幢</param>
-        /// <returns>返回区域码列表，如：310000/310100/310117</returns>
-        public List<String> GetCityIDsByAddress(string address, params char[] separator)
-        {
-            void AddIDs(List<String> ids, DataRow row)
+            if (type == 2)//省
             {
-                List<string> tmp = new List<string>();
-                GetParentIDs(tmp, row["f_code"].ToString());
-                tmp.Add(row["f_code"].ToString());
-
-                if (ids.Count == 0 || ids.Exists(e => tmp.IndexOf(e) >= 0))
-                {
-                    ids.Add(row["f_code"].ToString());
-                    ids.Add(row["f_parentcode"].ToString());
-                    ids.Add(GetParentId(row["f_parentcode"].ToString()));
-                }
+                int index = address.IndexOf(name);
+                //省没有匹配到首字符
+                if (index < 0 || index >= 3)
+                    return false;
             }
-            List<String> result = new List<string>();
-            //分解地址            
-            var list = address.Split(separator, StringSplitOptions.RemoveEmptyEntries).Distinct().ToArray();
-            list = list.Distinct().ToArray();//去重,唯一名称
-            //有规则，有分隔符号/，如：上海市/上海市/松江区 松卫北路6700弄沪松五金建材市场3幢1*****
-            if (list.Length > 1)
+            else if (type == 3)//市
             {
-                DataRow[] row;
-                foreach (var item in list)
-                {
-                    row = table.Select($"f_name='{item.Trim()}'", "f_type ASC");//匹配名称成功，如：上海市、松江区
-                    if (row.Length == 1)
-                    {
-                        AddIDs(result, row[0]);
-                    }
-                    else if (row.Length > 1)
-                    {
-                        foreach (DataRow R in row)
-                        {
-                            List<string> tmp = new List<string>();
-                            GetParentIDs(tmp, R["f_code"].ToString());
-                            if (result.Exists(e => tmp.IndexOf(e) >= 0))
-                            {
-                                AddIDs(result, R);
-                                break;
-                            }
-                        }
-                    }
-                }
+                address = address.Replace("市", "");
+                int index = address.IndexOf(name);
+                if (index >= 0)
+                    return true;
             }
-
-            result = result.Where(e => e != "" && e != ROOT_ID).Distinct().OrderBy(x => x).ToList<String>();
-            return result;
-        }
-
-        /// <summary>
-        /// 获取地址区码
-        /// </summary>
-        /// <param f_name="address">地址，如：上海市松江区松卫北路6700弄沪松五金建材市场3幢</param>
-        /// <returns>返回区域码列表，如：310000/310100/310117</returns>
-        public List<String> GetCityIDsByAddress(string address)
-        {
-            List<String> ids = new List<string>();
-            table.DefaultView.Sort = "f_type ASC";
-            //枚举所有城市名称，匹配地址
-            foreach (DataRow R in table.DefaultView.ToTable().Rows)
+            else if (type == 4)
             {
-                var f_name = R["f_name"].ToString();
-                //上海市宝山区丰翔路888号
-                if (address.IndexOf(f_name) >= 0)
-                {
-                    string f_code = R["f_code"]?.ToString();
-                    string f_parentcode = R["f_parentcode"]?.ToString();
-                    List<string> tmp = new List<string>();
-                    GetParentIDs(tmp, f_code);
-                    tmp.Add(f_code);
-                    if (ids.Count == 0 || ids.Exists(e => tmp.IndexOf(e) >= 0))
-                    {
-                        string parent = GetParentId(f_parentcode);
-                        ids.Add(f_code);
-                        ids.Add(f_parentcode == "1" ? "" : f_parentcode);
-                        ids.Add(parent == "1" ? "" : parent);
-                        address = address.Replace(f_name, "");
-                    }
-                }
-            }
 
-            var result = ids.Where(e => e != "" && e != ROOT_ID).Distinct().OrderBy(x => x).ToList<String>();
-            return result;
+            }
+            return address.IndexOf(name) >= 0;
+
         }
 
     }
