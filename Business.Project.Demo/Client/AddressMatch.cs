@@ -130,21 +130,24 @@ namespace Business.Project.Demo.Client
 
     public class AddressParseV2
     {
-        public static ReceiverModel AutoSplitReveive(string orifulladdress = "")
+        // static IMemoryCache _memeryCache = new MemoryCache(Options.Create(new MemoryCacheOptions()));
+        public static ReceiverModel AutoSplitReveive()
         {
-            //安徽省黄山市屯溪区昱东街道昱东街道黄山东路55号黄山供电公司 倪媛媛 18855942632
+            string orifulladdress = "张洒洒水，13588403906，江苏南京浦口区江浦街道文三西路110号";
             ReceiverModel rmodel = new ReceiverModel();
-            orifulladdress = "13579231255史艳梅新疆维吾尔自治区乌鲁木齐市沙依巴克区西山街道西山街道西泉西街777号万泰阳光城二期41号楼3单元602室 ";
             GetReveiveList(orifulladdress.Trim(), out string phone, out string name, out string addressDetail);
-            addressDetail= addressDetail.TrimStart(new char[] { ',','，',' '});
-            name= name.TrimStart(new char[] { ',', '，', ' ' });
-            string address = GetCityName(addressDetail, out string provinceName, out string cityName, out string areaName);
+            addressDetail = addressDetail.TrimStart(new char[] { ',', '，', ' ' });
+            name = name.Replace(",", "").Replace("，", "");
+            if (string.IsNullOrEmpty(addressDetail))
+                return rmodel;
+
+            string address = GetCityName(addressDetail, out string provinceName, out string cityName, out string areaName, out string rstreet);
             rmodel.rmobile = phone;
             rmodel.rname = name;
             rmodel.rprovince = provinceName;
             rmodel.rcity = cityName;
             rmodel.rdistrict = areaName;
-            rmodel.rstreet = "";
+            rmodel.rstreet = rstreet;
             rmodel.rdetail = address;
             return rmodel;
         }
@@ -217,6 +220,7 @@ namespace Business.Project.Demo.Client
         //姓名 + 地址
         private static void AddressSplitName(List<string> provinceList, string address, out string nameSplit, out string addressSplit)
         {
+            Regex regexName = new Regex("^[A-Za-z0-9]+$");
             nameSplit = "";
             addressSplit = "";
             if (string.IsNullOrEmpty(address) || provinceList == null || provinceList.Count == 0)
@@ -231,7 +235,18 @@ namespace Business.Project.Demo.Client
                     break;
                 }
                 int index = address.IndexOf(province); //姓名+地址 
-                if (index >= 2)
+                //判断是否是英文和数字
+                if (index > 5)
+                {
+                    string numOrZ = address.Substring(5, index - 5);
+                    if (regexName.IsMatch(numOrZ))
+                    {
+                        nameSplit = address.Substring(0, index);
+                        addressSplit = address.Remove(0, index);
+                        break;
+                    }
+                }
+                if (index >= 2 && index < 11)
                 {
                     nameSplit = address.Substring(0, index);
                     addressSplit = address.Remove(0, index);
@@ -240,18 +255,133 @@ namespace Business.Project.Demo.Client
             }
         }
 
-        private static string GetCityName(string address, out string provinceName, out string cityName, out string areaName)
+        private static void GetMobileCode(List<string> items, ReceiverModel rmodel)
         {
-            //List<tbmain_area> areaList = GetCityList() ?? new List<tbmain_area>();
-            string content = FileUtil.GetContent();
-            var areaList = JsonConvert.DeserializeObject<List<tbmain_area>>(content) ?? new List<tbmain_area>();
+            var regmobile = new System.Text.RegularExpressions.Regex("^((\\+)?86)?1[0-9]{10}$");
+            var regmobile1 = new System.Text.RegularExpressions.Regex("((\\+)?86)?1[0-9]{10}");
+            var regphone = new System.Text.RegularExpressions.Regex("^(0[0-9]{2,3}(-)?)?([2-9][0-9]{6,7})+(/-[0-9]{1,4})?$");
+            var regpost = new System.Text.RegularExpressions.Regex("^[0-9]{6}$");
+            //手机/电话
+            for (var k = 0; k < items.Count; k++)
+            {
+                var item = items[k];
+                if (item == "86" || item == "+86")
+                {
+                    items.RemoveAt(k);
+                    k--;
+                    continue;
+                }
+                if (regmobile.IsMatch(item))
+                {
+                    rmodel.rmobile = item;
+                    items.RemoveAt(k);
+                    k--;
+                    continue;
+                }
+                if (regphone.IsMatch(item))
+                {
+                    rmodel.rphone = item;
+                    items.RemoveAt(k);
+                    k--;
+                    continue;
+                }
+                if (regpost.IsMatch(item))
+                {
+                    rmodel.rzip = item;
+                    items.RemoveAt(k);
+                    k--;
+                    continue;
+                }
+            }
+            if (string.IsNullOrWhiteSpace(rmodel.rmobile))
+            {
+                for (var k = 0; k < items.Count; k++)
+                {
+                    var item = items[k];
+
+                    if (regmobile1.IsMatch(item))
+                    {
+                        rmodel.rmobile = regmobile1.Match(item).Value;
+                        items.RemoveAt(k);
+                        var release = item.Replace(rmodel.rmobile, " ").Trim();
+                        var xxitems = release.Split(" ".ToArray(), StringSplitOptions.RemoveEmptyEntries);
+                        if (!string.IsNullOrEmpty(release) && xxitems.Length > 0)
+                        {
+                            items.InsertRange(k, xxitems);
+                        }
+                        break;
+                    }
+                }
+            }
+
+        }
+
+        private static void GetRName(List<string> items, ReceiverModel rmodel)
+        {
+            var provinces = new List<string>() { "北京",
+"天津","河北","山西","内蒙","辽宁","吉林","黑龙江","上海","江苏","浙江","安徽","福建","江西","山东","河南",
+"湖北","湖南","广东","广西","海南","重庆","四川","贵州","云南","西藏","陕西","甘肃","青海","宁夏","新疆","台湾",
+"香港","澳门"};
+            int provindex = -1;
+            int provlength = -1;
+            if (items.Count == 0)
+                return;
+
+            for (var k = 0; k < items.Count; k++)
+            {
+                var item = items[k];
+                var exist = provinces.FindIndex(x => item.StartsWith(x));
+                if (exist >= 0)
+                {
+                    provlength = provinces[exist].Length;
+                    provindex = k;
+                    break;
+                }
+            }
+            if (provindex < 0)
+            {
+                var minLengthItem = items.OrderBy(t => t.Length).First();
+                rmodel.rname = minLengthItem;
+                rmodel.rdetail = String.Join(' ', items.Where(t => t != minLengthItem));
+                return;
+            }
+            var tmpdetail = string.Empty;
+            if (provindex > 0)
+            {
+                if (IsYinWenMing(items[0]))
+                { // 如果是英文名 不限长度
+                    rmodel.rname = items[0];
+                    items.RemoveAt(0);
+                    provindex--;
+                }
+                else// if (items[0].Length <= 4)
+                { // 如果是汉子 小于4个字符 就是名字
+                    rmodel.rname = items[0];
+                    items.RemoveAt(0);
+                    provindex--;
+                }
+            }
+            else if (items.Count > provindex + 1)
+            {
+                var minLengthItem = items.Skip(provindex).OrderBy(t => t.Length).First();
+                rmodel.rname = minLengthItem;
+                tmpdetail = String.Join(' ', items.Skip(provindex + 1).Where(t => t != minLengthItem));
+            }
+
+        }
+
+        private static string GetCityName(string address, out string provinceName, out string cityName, out string areaName, out string streetName)
+        {
+            List<tbmain_area> areaList = GetCityList() ?? new List<tbmain_area>();
             //匹配省市区
             string provinceCode = GetProvinceCode(areaList, ref address);
             string cityCode = GetCityCode(areaList, ref address, ref provinceCode);
             string areaCode = GetAreaCode(areaList, ref address, ref provinceCode, ref cityCode);
+            string streetCode = GetStreetCode(areaCode, ref address, out streetName);
             provinceName = GetAreaName(areaList, provinceCode);
             cityName = GetAreaName(areaList, cityCode);
             areaName = GetAreaName(areaList, areaCode);
+
             //如果需要匹配街道需要根据市和区编号区重新查库
             return address;
         }
@@ -259,7 +389,7 @@ namespace Business.Project.Demo.Client
         private static string GetProvinceCode(List<tbmain_area> areaList, ref string address)
         {
             var list = areaList.Where(a => a.type == 2).ToList();
-            var autoRegions = new List<string>() { "新疆维吾尔族自治区", "广西壮族自治区", "宁夏回族自治区", "西藏自治区", "内蒙古自治区" };
+            var autoRegions = new List<string>() { "新疆维吾尔自治区", "新疆维吾尔族自治区", "广西壮族自治区", "宁夏回族自治区", "西藏自治区", "内蒙古自治区" };
             if (list == null || list.Count == 0)
             {
                 return "";
@@ -297,7 +427,6 @@ namespace Business.Project.Demo.Client
                 {
                     address = address.Replace("省", "");
                 }
-               /// address = address.StartsWith("市") ?  : address;
                 return area.code;
             }
             return "";
@@ -346,7 +475,6 @@ namespace Business.Project.Demo.Client
             foreach (tbmain_area area in list)
             {
                 string name = RemoveAreaNameEnd(area.name, out string endName);
-                int index = address.IndexOf(name);
                 if (address.StartsWith(name))
                 {
                     cityCode = area.parentcode;
@@ -361,6 +489,28 @@ namespace Business.Project.Demo.Client
                 }
             }
             return "";
+        }
+
+        private static string GetStreetCode(string areaCode, ref string address, out string streetName)
+        {
+            streetName = "";
+            if (string.IsNullOrEmpty(areaCode))
+                return "";
+
+            var streetList = GetCityStreetList(areaCode);
+            if (streetList == null || streetList.Count == 0)
+                return "";
+
+            foreach (var street in streetList)
+            {
+                if (address.StartsWith(street.name))
+                {
+                    address = address.Remove(0, street.name.Length);
+                    streetName = street.name;
+                    return street.code;
+                }
+            }
+            return address;
         }
 
         private static string GetAreaName(List<tbmain_area> areaList, string code)
@@ -431,6 +581,50 @@ namespace Business.Project.Demo.Client
             return r.IsMatch(mc);
         }
         #endregion
+
+        public static void WriteAddress() 
+        {
+            List<tbmain_area> areaList = GetCityList() ?? new List<tbmain_area>();
+            var privodeList = areaList.Where(a => a.type == 2).ToList();
+            var streetList = GetCityStreetList();
+            StringBuilder buider = new StringBuilder();
+            foreach (var item in privodeList)
+            {
+                string addressname1 = item.name;
+                foreach (var itemcity in areaList.Where(a => a.type == 3).Where(a => a.parentcode == item.code)) 
+                {
+                    string addressname2 = addressname1+"--"+ itemcity.name;
+                    foreach (var itemarea in areaList.Where(a => a.type == 4).Where(a => a.parentcode == itemcity.code))
+                    {
+                        string addressname3 = addressname2 + "--" + itemarea.name;
+                        foreach (var itemstrees in streetList.Where(a => a.parentcode == itemarea.code))
+                        {
+                            string addressname4 = addressname3 + "--" + itemstrees.name+ "\r\n \r\n";
+                            buider.Append(addressname4);
+                        }
+                    }
+                }
+            }
+            FileUtil.WriteLog(buider.ToString());
+        }
+
+        /// <summary>
+        /// 查询省市区
+        /// </summary>
+        /// <returns></returns>
+        public static List<tbmain_area> GetCityList()
+        {
+            string content = FileUtil.GetContent();
+            return JsonConvert.DeserializeObject<List<tbmain_area>>(content) ?? new List<tbmain_area>();
+        }
+
+        //获取区下面的街道
+        public static List<tbmain_area> GetCityStreetList(string parentcode="")
+        {
+            string content = FileUtil.GetContent(@"D:\Heng_Sheng_DianZi\etc\20220615.txt");
+            return JsonConvert.DeserializeObject<List<tbmain_area>>(content) ?? new List<tbmain_area>();
+        }
+
     }
 
     public class ReceiverModel

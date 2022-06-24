@@ -3,4 +3,5 @@ using Business.Project.Demo.Client;
 using Business.Project.Demo.Framework;
 
 Console.WriteLine("Hello, World!");
-AddressParseV2.AutoSplitReveive();
+//Demo.TestDemo();
+AddressParseV2.WriteAddress();

@@ -9,19 +9,23 @@ namespace Business.Project.Demo.Client
     public class Demo
     {
         static int Id;
-        public Demo(int id) 
+        public Demo(int id)
         {
-            Id=id;
+            Id = id;
         }
 
         public static void TestDemo()
         {
-            var num1 = Id;
-            string str = "2022-05-26 13:54:19";
-            string str2 = @"test11test11test1test11test11test11test111test11test11test11test1test11test11test11test111test11test11test11test1test11test11";
-            int num = str2.Length;
-            var date = Convert.ToDateTime(str).ToString("yyyy-MM-dd HH:mm:ss");
-            
+            var date = DateTime.Now.AddDays(1 - DateTime.Now.Day).AddMonths(1).AddDays(-1);
+            List<string> moduleList = new List<string>();
+            moduleList.Add("aaaaa");
+            moduleList.Add("bbbbb");
+            string ids = "";
+            foreach (var item in moduleList)
+            {
+                ids += $"'{item}',";
+            }
+            string _tempsql = " update tb___sys_fin_closefin set f_closefindate=@f_closefindate where f_modulecode in ('"+ string.Join(",", moduleList)+"') ";
         }
     }
 
